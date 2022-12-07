@@ -1,8 +1,7 @@
-import uuid
-import json
-import base64
-import time
 import os
+import uuid
+import time
+import base64
 import hashlib
 from httpx import Client
 from urllib.parse import quote
@@ -10,29 +9,29 @@ from urllib.parse import quote
 import logging
 LOGGER = logging.getLogger(__package__)
 
-TESLAPI_TOKEN = 'teslapi.token'
+TESLAPI_TOKEN = '/Users/admin/Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents/' + 'teslapi.token'
 
 
 class TeslaPi(Client):
     access_token = None
 
     def __init__(self, email, password):
-        super().__init__(http2=True, verify=False)
+        super().__init__(http2=True)
         try:
             with open(TESLAPI_TOKEN) as f:
-                token = json.load(f)
-            if time.time() + 10 * 60 > token[1]:
+                token = f.read().split('\n')
+            if time.time() + 10 * 60 > int(token[2]):
                 LOGGER.info('Refresh token...')
-                token = self.oauth_token(token[2])
+                token = self.oauth_token(token[0])
         except:
             LOGGER.info('Authorizing...')
             try:
                 token = self.authorize(email, password)
-            except:
-                LOGGER.error('Login failed')
+            except Exception as e:
+                LOGGER.error('Login failed: %@', e)
                 self.access_token = None
                 return
-        self.access_token = token[0]
+        self.access_token = token[1]
 
     def app_headers(self, need_key=True):
         headers = {
@@ -47,7 +46,7 @@ class TeslaPi(Client):
         return headers
 
     def authorize(self, email, password):
-        code_verifier = base64.urlsafe_b64encode(os.urandom(32))
+        code_verifier = base64.urlsafe_b64encode(os.urandom(32)).rstrip(b'=')
         code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier).digest()).rstrip(b'=').decode()
         state = quote(base64.b64encode(os.urandom(32)).decode())
         url = f'https://auth.tesla.cn/oauth2/v3/authorize?audience=&client_id=ownerapi&code_challenge={code_challenge}&code_challenge_method=S256&locale=zh-CN&prompt=login&redirect_uri=https%3A%2F%2Fauth.tesla.com%2Fvoid%2Fcallback&response_type=code&scope=openid%20email%20offline_access&state={state}'
@@ -63,7 +62,7 @@ class TeslaPi(Client):
             values[name] = text[value:end]
         _csrf = values['_csrf']
         transaction_id = values['transaction_id']
-        email = self.email.replace('@', '%40')
+        email = quote(email)
         data = f'_csrf={_csrf}&_phase=authenticate&_process=1&cancel=&transaction_id={transaction_id}&change_identity=&identity={email}&credential={password}'
         headers['content-type'] = 'application/x-www-form-urlencoded'
         res = self.post(url, data=data, headers=headers)
@@ -91,9 +90,9 @@ class TeslaPi(Client):
         res = self.post('https://auth.tesla.cn/oauth2/v3/token', json=data, headers=self.app_headers(need_key=refresh_token))
         r = res.json()
         expires_in = r['expires_in'] + int(time.time())
-        token = [r['access_token'], expires_in, r['refresh_token']]
+        token = [r['refresh_token'], r['access_token'], str(expires_in)]
         with open(TESLAPI_TOKEN, 'w') as f:
-            json.dump(token, f)
+            f.write('\n'.join(token))
         return token
 
     def products(self):
