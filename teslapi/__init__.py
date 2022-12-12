@@ -9,35 +9,39 @@ from urllib.parse import quote
 import logging
 LOGGER = logging.getLogger(__package__)
 
-TESLAPI_TOKEN = '/Users/admin/Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents/' + 'teslapi.token'
+TESLAPI_TOKEN = 'teslapi.token'
 
 
 class TeslaPi(Client):
     access_token = None
-
+    vehicle_ids = None
+    
     def __init__(self, email, password):
         super().__init__(http2=True)
         try:
             with open(TESLAPI_TOKEN) as f:
                 token = f.read().split('\n')
-            if time.time() + 10 * 60 > int(token[2]):
+            if time.time() + 10 * 60 > int(token[1]):
                 LOGGER.info('Refresh token...')
-                token = self.oauth_token(token[0])
+                token = self.oauth_token(token[2])
+            else:
+                self.access_token = token[0]
         except:
             LOGGER.info('Authorizing...')
             try:
                 token = self.authorize(email, password)
             except Exception as e:
-                LOGGER.error('Login failed: %@', e)
-                self.access_token = None
+                import traceback
+                LOGGER.error('Login failed: %s', traceback.format_exc())
                 return
-        self.access_token = token[1]
+        
+        self.vehicle_ids = token[3:] if len(token) > 3 else None
 
     def app_headers(self, need_key=True):
         headers = {
             'content-type': 'application/json',
-            'x-tesla-app-key': '029260B036CADB983512CC669A64111F95631EBF' if need_key else '',
             'user-agent': 'Tesla/4.14.4 (com.teslamotors.TeslaApp; build:1455; iOS 16.1.2) Alamofire/5.2.1',
+            'x-tesla-app-key': '029260B036CADB983512CC669A64111F95631EBF' if need_key else '',
             'x-tesla-user-agent': 'TeslaApp/4.14.4-1455/6a4c86898a/ios/16.1.2',
             "x-txid": str(uuid.uuid1()).upper(),
         }
@@ -90,7 +94,10 @@ class TeslaPi(Client):
         res = self.post('https://auth.tesla.cn/oauth2/v3/token', json=data, headers=self.app_headers(need_key=refresh_token))
         r = res.json()
         expires_in = r['expires_in'] + int(time.time())
-        token = [r['refresh_token'], r['access_token'], str(expires_in)]
+        self.access_token = r['access_token']
+        token = [self.access_token, str(expires_in), r['refresh_token']]
+        for p in self.products():
+            token.append(str(p['id']))
         with open(TESLAPI_TOKEN, 'w') as f:
             f.write('\n'.join(token))
         return token

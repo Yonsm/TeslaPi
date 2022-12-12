@@ -22,10 +22,9 @@ if __name__ == '__main__':
             print('Login failed')
         exit(-1)
 
-    products = api.products()
-    if not products:
+    if not api.vehicle_ids:
         print('No vehicles')
         exit(-2)
 
-    data = api.vehicle_data(products[0]['id'])
+    data = api.vehicle_data(api.vehicle_ids[0])
     print(json.dumps(data, indent=2))
